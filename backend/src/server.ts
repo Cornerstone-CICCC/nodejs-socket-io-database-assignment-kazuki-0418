@@ -27,13 +27,13 @@ app.use("/api/chat", chatRouter);
 const server = createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "", // Your frontend url here (Astro, React, vanilla HTML)
+    origin: "http://localhost:3000", // Your frontend url here (Astro, React, vanilla HTML)
     methods: ["GET", "POST"],
   },
 });
 
 // Connect to MongoDB and start server
-const MONGO_URI = process.env.DATABASE_URL!;
+const MONGO_URI = process.env.DATABASE_URL as string;
 mongoose
   .connect(MONGO_URI, { dbName: "chatroom" })
   .then(() => {

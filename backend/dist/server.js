@@ -26,7 +26,7 @@ app.use("/api/chat", chat_routes_1.default);
 const server = (0, http_1.createServer)(app);
 const io = new socket_io_1.Server(server, {
     cors: {
-        origin: "", // Your frontend url here (Astro, React, vanilla HTML)
+        origin: "http://localhost:3000", // Your frontend url here (Astro, React, vanilla HTML)
         methods: ["GET", "POST"],
     },
 });

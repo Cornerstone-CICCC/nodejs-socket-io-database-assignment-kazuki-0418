@@ -8,32 +8,98 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
-const chat_model_1 = require("../models/chat.model");
-const setupChatSocket = (io) => {
-    io.on('connection', (socket) => {
-        // On connect
-        console.log(`User connected: ${socket.id}`);
-        // Listen to 'sendMessage' event
-        socket.on('sendMessage', (data) => __awaiter(void 0, void 0, void 0, function* () {
-            const { username, message } = data;
+const chat_controller_1 = __importDefault(require("../controllers/chat.controller"));
+exports.default = (io) => {
+    const users = {};
+    const userRooms = {};
+    io.on("connection", (socket) => {
+        console.log("User connected:", socket.id);
+        // ユーザー名設定
+        socket.on("set_username", (username) => {
+            users[socket.id] = username;
+            console.log(`User ${username} (${socket.id}) connected`);
+        });
+        // メッセージ送信
+        socket.on("send_message", (data) => __awaiter(void 0, void 0, void 0, function* () {
             try {
-                // Save message to MongoDB
-                const chat = new chat_model_1.Chat({ username, message });
-                yield chat.save();
-                // Broadcast the chat object to all connected clients via the newMessage event
-                io.emit('newMessage', chat);
-                // For room-based broadcast
-                // io.to(data.room).emit('newMessage', chat)
+                const username = users[socket.id];
+                if (!username)
+                    return;
+                console.log(`Message from ${username}:`, data);
+                console.log("User rooms:", data);
+                const messageData = {
+                    username,
+                    message: data.message,
+                    room: data.room || "",
+                    timestamp: new Date(),
+                };
+                // コントローラーを使ってメッセージを保存
+                const savedMessage = yield chat_controller_1.default.saveMessage(messageData);
+                // 特定のルームか全体にメッセージをブロードキャスト
+                if (data.room) {
+                    socket.to(data.room).emit("receive_message", savedMessage);
+                }
+                else {
+                    socket.broadcast.emit("receive_message", savedMessage);
+                }
             }
             catch (error) {
-                console.error('Error saving chat:', error);
+                console.error("Error handling message:", error);
+                socket.emit("error", { message: "Failed to send message" });
             }
         }));
-        // On disconnect
-        socket.on('disconnect', () => {
-            console.log(`User disconnected: ${socket.id}`);
+        socket.on("join_room", (room) => {
+            // Leave previous room if any
+            if (userRooms[socket.id]) {
+                socket.leave(userRooms[socket.id]);
+            }
+            // Join new room
+            socket.join(room);
+            userRooms[socket.id] = room;
+            // Get username from our map
+            const username = users[socket.id] || "Anonymous";
+            console.log(`User ${username} joined room: ${room}`);
+            // Notify everyone in the room
+            io.to(room).emit("room_message", {
+                type: "join",
+                username: username,
+                room: room,
+                timestamp: new Date(),
+            });
+        });
+        socket.on("leave_room", () => {
+            const room = userRooms[socket.id];
+            if (room) {
+                socket.leave(room);
+                // Notify everyone in the room
+                io.to(room).emit("room_message", {
+                    type: "leave",
+                    username: users[socket.id] || "Anonymous",
+                    room: room,
+                    timestamp: new Date(),
+                });
+                // Remove room tracking
+                delete userRooms[socket.id];
+            }
+        });
+        // 切断
+        socket.on("disconnect", () => {
+            if (userRooms[socket.id]) {
+                const disconnectMessage = {
+                    type: "leave",
+                    username: users[socket.id] || "Anonymous",
+                    room: userRooms[socket.id],
+                    timestamp: new Date(),
+                };
+                io.to(userRooms[socket.id]).emit("room_message", disconnectMessage);
+            }
+            console.log(`User ${users[socket.id] || "Anonymous"} disconnected`);
+            delete users[socket.id];
+            delete userRooms[socket.id];
         });
     });
 };
-exports.default = setupChatSocket;
